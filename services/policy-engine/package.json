@@ -1,0 +1,23 @@
+{
+  "name": "@agentic-wallet/policy-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agentic-wallet/common": "file:../../packages/common",
+    "@hono/node-server": "^1.14.0",
+    "better-sqlite3": "^12.6.2",
+    "hono": "^4.7.4",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  }
+}

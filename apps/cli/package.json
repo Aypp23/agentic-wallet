@@ -1,0 +1,23 @@
+{
+  "name": "@agentic-wallet/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "banner:regen": "node src/banner-assets/generate-assets.mjs"
+  },
+  "dependencies": {
+    "@agentic-wallet/sdk": "file:../../packages/sdk",
+    "boxen": "^8.0.1",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.1",
+    "dotenv": "^17.2.2",
+    "inquirer": "^12.9.6",
+    "ora": "^8.2.0"
+  }
+}

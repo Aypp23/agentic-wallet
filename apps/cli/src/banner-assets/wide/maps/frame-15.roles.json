@@ -1,0 +1,35 @@
+{
+  "legend": {
+    ".": "plain",
+    "F": "frame",
+    "M": "meta",
+    "T": "title",
+    "L": "logoMain",
+    "S": "logoShadow",
+    "U": "subtitle",
+    "P": "prompt",
+    "K": "spark",
+    "H": "mascotHead",
+    "G": "mascotGoggles",
+    "E": "mascotEyes"
+  },
+  "rows": [
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "F..K..MMMMMMMMMMMMMMMMMMMMMMMMM.............................................................K..F",
+    "F.FFF......................................................................................FFF.F",
+    "F.F..........................................................................................F.F",
+    "F....LLLLLL..LLLLLLL.LLLLLLLLLLLL...LLLLLLLLLLLLLLL.LLLLLLL.....................HHHHHHHH.......F",
+    "F...LLLLLLLLLLLLLLLLSLLLLLLLLLLLLL..LLLLLLLLLLLLLLLLLLLLLLLS.................HHHGGGGGGGGHHH....F",
+    "F...LLLLLLLLLLLSSLLLLLLLLLLSSLLLLLL.LLLSSSLLLSSSLLLLLLSSSSSS................HHGGGGGGGGGGGGHH...F",
+    "F...LLLLLLLLLLLS..LLLLLLLLLS.LLLLLLLLLLS..LLLS..LLLLLLS....................HHGGGG..GG..GGGGHH..F",
+    "F...LLLSSLLLLLLLLLLLLLLLLLLLLLLLSLLLLLLS..LLLS..LLLLLLLLLLL................HHGGGG..GG..GGGGHH..F",
+    "F...LLLS.LLLSLLLLLLLSLLLLLLLLLLLS.LLLLLS..LLLS..LLLSLLLLLLLS...............HHGGGG..EE..GGGGHH..F",
+    "F....SSS..SSS.SSSSSSS.SSSSSSSSSSS..SSSSS...SSS...SSS.SSSSSSS................HHGGGGGGGGGGGGHH...F",
+    "F....TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.....................HHHHHHHHHHHHHH....F",
+    "F..............................................................................................F",
+    "F...UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU..........................F",
+    "F.F.MMMMMMMMMMMMMMMMMMM......................................................................F.F",
+    "F.FFPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP....................................FFF.F",
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+  ]
+}

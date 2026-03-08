@@ -1,0 +1,33 @@
+{
+  "legend": {
+    ".": "plain",
+    "F": "frame",
+    "M": "meta",
+    "T": "title",
+    "L": "logoMain",
+    "S": "logoShadow",
+    "U": "subtitle",
+    "P": "prompt",
+    "K": "spark",
+    "H": "mascotHead",
+    "G": "mascotGoggles",
+    "E": "mascotEyes"
+  },
+  "rows": [
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "F..K..MMMMMMMMMMMMMMMMMMMMMMMMM...........................................K..F",
+    "F.FFF....................................................................FFF.F",
+    "F.F........................................................................F.F",
+    "F....LLL.LLL.LLL.LLLL.LLL.L.LLL.............................................HH",
+    "F....LLLSLLLSLLLSLLLLSLLLSLSLLLS.........................................HHHGG",
+    "F.....SSS.SSS.SSS.SSSS.SSS.S.SSS........................................HHGGGG",
+    "F......................................................................HHGGGGF",
+    "F......................................................................HHGGGGF",
+    "F..TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.................HHGGGGF",
+    "F.......................................................................HHGGGG",
+    "F...UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU....HHHHH",
+    "F.F.MMMMMMMMMMMMMMMMMMM....................................................F.F",
+    "F.FFPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP..................FFF.F",
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+  ]
+}

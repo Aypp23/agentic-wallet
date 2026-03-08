@@ -1,0 +1,109 @@
+{
+  "id": "agentic-wallet-banner-wide",
+  "width": 96,
+  "height": 17,
+  "version": 1,
+  "compact": false,
+  "frames": [
+    {
+      "name": "frame-01",
+      "duration": 75,
+      "glintX": 0
+    },
+    {
+      "name": "frame-02",
+      "duration": 75,
+      "glintX": 5
+    },
+    {
+      "name": "frame-03",
+      "duration": 75,
+      "glintX": 10
+    },
+    {
+      "name": "frame-04",
+      "duration": 75,
+      "glintX": 15
+    },
+    {
+      "name": "frame-05",
+      "duration": 75,
+      "glintX": 20
+    },
+    {
+      "name": "frame-06",
+      "duration": 75,
+      "glintX": 25
+    },
+    {
+      "name": "frame-07",
+      "duration": 75,
+      "glintX": 30
+    },
+    {
+      "name": "frame-08",
+      "duration": 75,
+      "glintX": 35
+    },
+    {
+      "name": "frame-09",
+      "duration": 75,
+      "glintX": 40
+    },
+    {
+      "name": "frame-10",
+      "duration": 75,
+      "glintX": 45
+    },
+    {
+      "name": "frame-11",
+      "duration": 75,
+      "glintX": 50
+    },
+    {
+      "name": "frame-12",
+      "duration": 75,
+      "glintX": 55
+    },
+    {
+      "name": "frame-13",
+      "duration": 75,
+      "glintX": 60
+    },
+    {
+      "name": "frame-14",
+      "duration": 75,
+      "glintX": 65
+    },
+    {
+      "name": "frame-15",
+      "duration": 75,
+      "glintX": 70
+    },
+    {
+      "name": "frame-16",
+      "duration": 75,
+      "glintX": 75
+    },
+    {
+      "name": "frame-17",
+      "duration": 75,
+      "glintX": 80
+    },
+    {
+      "name": "frame-18",
+      "duration": 75,
+      "glintX": 85
+    },
+    {
+      "name": "frame-19",
+      "duration": 75,
+      "glintX": 90
+    },
+    {
+      "name": "frame-20",
+      "duration": 75,
+      "glintX": 95
+    }
+  ]
+}
