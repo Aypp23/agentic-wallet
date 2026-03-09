@@ -99,4 +99,11 @@ export class StrategyStore {
   getLatestBacktest(walletId: string): StrategyBacktestResult | null {
     return this.latestBacktestByWalletId.get(walletId) ?? null;
   }
+
+  clear(): void {
+    this.backtests.clear();
+    this.latestBacktestByWalletId.clear();
+    this.paperTrades.clear();
+    this.persist();
+  }
 }

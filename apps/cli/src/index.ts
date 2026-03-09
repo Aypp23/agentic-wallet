@@ -109,6 +109,29 @@ const KNOWN_PROTOCOLS = [
   'escrow',
 ] as const;
 
+const INTENT_PROTOCOL_PREFERENCES: Partial<Record<(typeof KNOWN_INTENTS)[number], string[]>> = {
+  query_balance: ['system-program'],
+  query_positions: ['system-program'],
+  transfer_sol: ['system-program'],
+  transfer_spl: ['spl-token'],
+  create_mint: ['spl-token', 'metaplex'],
+  mint_token: ['spl-token', 'metaplex'],
+  swap: ['jupiter', 'orca', 'raydium'],
+  stake: ['marinade'],
+  unstake: ['marinade'],
+  lend_supply: ['solend'],
+  lend_borrow: ['solend'],
+  create_escrow: ['escrow'],
+  accept_escrow: ['escrow'],
+  release_escrow: ['escrow'],
+  refund_escrow: ['escrow'],
+  dispute_escrow: ['escrow'],
+  resolve_dispute: ['escrow'],
+  create_milestone_escrow: ['escrow'],
+  release_milestone: ['escrow'],
+  x402_pay: ['escrow'],
+};
+
 const DEFAULT_API = process.env.API_BASE_URL ?? 'http://localhost:3000';
 const DEFAULT_KEY = process.env.API_KEY ?? 'dev-api-key';
 const DEFAULT_TENANT = process.env.TENANT_ID ?? '';
@@ -116,6 +139,8 @@ const DEFAULT_THEME = (process.env.CLI_THEME ?? 'matrix') as CliThemeName;
 const DEFAULT_BANNER = (process.env.CLI_BANNER ?? 'true') !== 'false';
 const DEFAULT_ANIMATED_BANNER = (process.env.CLI_ANIMATED_BANNER ?? 'true') !== 'false';
 const BACK_OPTION = '__back__';
+const MANUAL_WALLET_OPTION = '__manual_wallet__';
+const MANUAL_AGENT_OPTION = '__manual_agent__';
 
 const ROUNDED_TABLE_CHARS: TableChars = {
   top: '─',
@@ -329,6 +354,283 @@ const maybeReadJsonFile = async (path?: string): Promise<Record<string, unknown>
   return parseJson(content, `file:${path}`);
 };
 
+class PromptBackError extends Error {
+  constructor() {
+    super('Prompt canceled (back)');
+    this.name = 'PromptBackError';
+  }
+}
+
+const isExitPromptError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === 'ExitPromptError' ||
+    error.message.includes('SIGINT') ||
+    error.message.includes('force closed the prompt'));
+
+const promptWithEscBack = async <T>(questions: unknown): Promise<T> => {
+  if (!process.stdin.isTTY) {
+    return (await inquirer.prompt(questions as any)) as T;
+  }
+
+  const stdin = process.stdin as NodeJS.ReadStream;
+  emitKeypressEvents(stdin);
+  const wasRaw = Boolean(stdin.isRaw);
+  if (!wasRaw && stdin.setRawMode) {
+    stdin.setRawMode(true);
+  }
+
+  const promptPromise = inquirer.prompt(questions as any) as Promise<T> & { ui: { close: () => void } };
+  const onData = (chunk: Buffer | string): void => {
+    const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    // Treat a literal Esc keypress as "back" for prompt flows.
+    if (data === '\u001b') {
+      promptPromise.ui.close();
+    }
+  };
+  stdin.on('data', onData);
+
+  try {
+    return await promptPromise;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortPromptError') {
+      throw new PromptBackError();
+    }
+    throw error;
+  } finally {
+    stdin.off('data', onData);
+    if (!wasRaw && stdin.setRawMode) {
+      stdin.setRawMode(false);
+    }
+  }
+};
+
+const promptMenuAction = async (
+  message: string,
+  choices: Array<{ name: string; value: string }>,
+  pageSize?: number,
+): Promise<string> => {
+  try {
+    const { action } = await promptWithEscBack<{ action: string }>([
+      {
+        type: 'list',
+        name: 'action',
+        message,
+        ...(pageSize ? { pageSize } : {}),
+        choices,
+      },
+    ]);
+    return action;
+  } catch (error) {
+    if (error instanceof PromptBackError) {
+      return BACK_OPTION;
+    }
+    throw error;
+  }
+};
+
+const promptWalletId = async (
+  ctx: CliContext,
+  message = 'Select wallet',
+): Promise<string | null> => {
+  let wallets: Awaited<ReturnType<typeof ctx.client.wallet.list>> = [];
+  try {
+    wallets = await withSpinner('Loading wallets', ctx.options.quiet, () => ctx.client.wallet.list());
+  } catch {
+    printError('Could not load wallets list. You can enter a wallet ID manually.');
+  }
+
+  const sortedWallets = [...wallets].sort((a, b) => {
+    const aTs = Date.parse((a as { createdAt?: string }).createdAt ?? '');
+    const bTs = Date.parse((b as { createdAt?: string }).createdAt ?? '');
+    const safeA = Number.isFinite(aTs) ? aTs : 0;
+    const safeB = Number.isFinite(bTs) ? bTs : 0;
+    return safeB - safeA;
+  });
+
+  const walletChoices = sortedWallets.map((wallet) => {
+    const label = typeof wallet.label === 'string' && wallet.label.trim().length > 0
+      ? wallet.label.trim()
+      : 'wallet';
+    const displayLabel = ['wallet', 'anon'].includes(label.toLowerCase())
+      ? `wallet-${wallet.id.slice(0, 8)}`
+      : label;
+    const publicKey = typeof wallet.publicKey === 'string' ? wallet.publicKey : '';
+    const shortPublicKey = publicKey.length > 12
+      ? `${publicKey.slice(0, 6)}…${publicKey.slice(-6)}`
+      : publicKey;
+    return {
+      name: `${displayLabel} (${shortPublicKey}) [${wallet.id.slice(0, 8)}]`,
+      value: wallet.id,
+    };
+  });
+
+  const choices = [
+    ...walletChoices,
+    { name: 'Enter wallet ID manually', value: MANUAL_WALLET_OPTION },
+    { name: 'Back', value: BACK_OPTION },
+  ];
+
+  let walletChoice: string;
+  try {
+    ({ walletChoice } = await promptWithEscBack<{ walletChoice: string }>([
+      {
+        type: 'list',
+        name: 'walletChoice',
+        message,
+        pageSize: 12,
+        choices,
+      },
+    ]));
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+
+  if (walletChoice === BACK_OPTION) return null;
+  if (walletChoice !== MANUAL_WALLET_OPTION) return walletChoice;
+
+  let walletId: string;
+  try {
+    ({ walletId } = await promptWithEscBack<{ walletId: string }>([
+      { type: 'input', name: 'walletId', message: 'Wallet ID (blank to go back):' },
+    ]));
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+  const trimmed = walletId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const promptAgentId = async (
+  ctx: CliContext,
+  message = 'Select agent',
+): Promise<string | null> => {
+  let agents: Awaited<ReturnType<typeof ctx.client.agent.list>> = [];
+  try {
+    agents = await withSpinner('Loading agents', ctx.options.quiet, () => ctx.client.agent.list());
+  } catch {
+    printError('Could not load agents list. You can enter an agent ID manually.');
+  }
+
+  const sortedAgents = [...agents].sort((a, b) => {
+    const aTs = Date.parse((a as { updatedAt?: string; createdAt?: string }).updatedAt ?? (a as { createdAt?: string }).createdAt ?? '');
+    const bTs = Date.parse((b as { updatedAt?: string; createdAt?: string }).updatedAt ?? (b as { createdAt?: string }).createdAt ?? '');
+    const safeA = Number.isFinite(aTs) ? aTs : 0;
+    const safeB = Number.isFinite(bTs) ? bTs : 0;
+    return safeB - safeA;
+  });
+
+  const agentChoices = sortedAgents.map((agent) => {
+    const name = typeof agent.name === 'string' && agent.name.trim().length > 0 ? agent.name.trim() : `agent-${agent.id.slice(0, 8)}`;
+    const mode = typeof agent.executionMode === 'string' ? agent.executionMode : 'unknown';
+    const status = typeof agent.status === 'string' ? agent.status : 'unknown';
+    const walletShort = typeof agent.walletId === 'string' ? agent.walletId.slice(0, 8) : 'no-wallet';
+    return {
+      name: `${name} [${agent.id.slice(0, 8)}] (${status}, ${mode}, w:${walletShort})`,
+      value: agent.id,
+    };
+  });
+
+  const choices = [
+    ...agentChoices,
+    { name: 'Enter agent ID manually', value: MANUAL_AGENT_OPTION },
+    { name: 'Back', value: BACK_OPTION },
+  ];
+
+  let agentChoice: string;
+  try {
+    ({ agentChoice } = await promptWithEscBack<{ agentChoice: string }>([
+      {
+        type: 'list',
+        name: 'agentChoice',
+        message,
+        pageSize: 12,
+        choices,
+      },
+    ]));
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+
+  if (agentChoice === BACK_OPTION) return null;
+  if (agentChoice !== MANUAL_AGENT_OPTION) return agentChoice;
+
+  let agentId: string;
+  try {
+    ({ agentId } = await promptWithEscBack<{ agentId: string }>([
+      { type: 'input', name: 'agentId', message: 'Agent ID (blank to go back):' },
+    ]));
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+
+  const trimmed = agentId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const protocolsForIntent = (intentType: string): string[] => {
+  const preferred = INTENT_PROTOCOL_PREFERENCES[intentType as (typeof KNOWN_INTENTS)[number]];
+  if (!preferred || preferred.length === 0) {
+    return [...KNOWN_PROTOCOLS];
+  }
+
+  const allowed = preferred.filter((protocol) =>
+    (KNOWN_PROTOCOLS as readonly string[]).includes(protocol),
+  );
+
+  return allowed.length > 0 ? allowed : [...KNOWN_PROTOCOLS];
+};
+
+const promptIntentType = async (message = 'Intent type:'): Promise<string | null> => {
+  try {
+    const { intentType } = await promptWithEscBack<{ intentType: string }>([
+      {
+        type: 'list',
+        name: 'intentType',
+        message,
+        choices: KNOWN_INTENTS,
+        default: 'query_balance',
+      },
+    ]);
+    return intentType;
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+};
+
+const promptProtocolForIntent = async (
+  intentType: string,
+  message = 'Protocol:',
+): Promise<string | null> => {
+  const allowedProtocols = protocolsForIntent(intentType);
+  if (allowedProtocols.length === 1) {
+    const selected = allowedProtocols[0];
+    if (!selected) return null;
+    printSuccess(`Protocol auto-selected: ${selected}`);
+    return selected;
+  }
+
+  try {
+    const { protocol } = await promptWithEscBack<{ protocol: string }>([
+      {
+        type: 'list',
+        name: 'protocol',
+        message,
+        choices: allowedProtocols,
+        default: allowedProtocols[0],
+      },
+    ]);
+    return protocol;
+  } catch (error) {
+    if (error instanceof PromptBackError) return null;
+    throw error;
+  }
+};
+
 const truncate = (value: string, max = 72): string => {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1)}…`;
@@ -384,42 +686,12 @@ const formatCell = (value: unknown, key = ''): string => {
 
 const printPromptHint = (): void => {
   console.log(
-    `${ACTIVE_THEME.muted('keys:')} ${ACTIVE_THEME.accent('↑/↓')} ${ACTIVE_THEME.muted('navigate')} ${ACTIVE_THEME.accent('•')} ${ACTIVE_THEME.accent('Enter')} ${ACTIVE_THEME.muted('select')} ${ACTIVE_THEME.accent('•')} ${ACTIVE_THEME.accent('Ctrl+C')} ${ACTIVE_THEME.muted('quit')} ${ACTIVE_THEME.accent(ACTIVE_THEME.glyph)}`,
+    `${ACTIVE_THEME.muted('keys:')} ${ACTIVE_THEME.accent('↑/↓')} ${ACTIVE_THEME.muted('navigate')} ${ACTIVE_THEME.accent('•')} ${ACTIVE_THEME.accent('Enter')} ${ACTIVE_THEME.muted('select')} ${ACTIVE_THEME.accent('•')} ${ACTIVE_THEME.accent('Esc')} ${ACTIVE_THEME.muted('back')} ${ACTIVE_THEME.accent('•')} ${ACTIVE_THEME.accent('Ctrl+C')} ${ACTIVE_THEME.muted('exit')} ${ACTIVE_THEME.accent(ACTIVE_THEME.glyph)}`,
   );
 };
 
-const withEscToExit = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
-  if (!process.stdin.isTTY) {
-    return fn();
-  }
-
-  emitKeypressEvents(process.stdin);
-  const stdin = process.stdin as NodeJS.ReadStream;
-  const wasRaw = Boolean(stdin.isRaw);
-
-  if (!wasRaw && stdin.setRawMode) {
-    stdin.setRawMode(true);
-  }
-
-  const onData = (chunk: Buffer | string): void => {
-    const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-    if (data === '\u001b') {
-      process.stdout.write('\n');
-      printSuccess(`${label} closed`);
-      process.exit(0);
-    }
-  };
-
-  stdin.on('data', onData);
-
-  try {
-    return await fn();
-  } finally {
-    stdin.off('data', onData);
-    if (!wasRaw && stdin.setRawMode) {
-      stdin.setRawMode(false);
-    }
-  }
+const withEscToExit = async <T>(_label: string, fn: () => Promise<T>): Promise<T> => {
+  return fn();
 };
 
 const printTable = (rows: Array<Record<string, unknown>>): void => {
@@ -545,6 +817,15 @@ const withSpinner = async <T>(label: string, quiet: boolean, fn: () => Promise<T
 };
 
 const handleCliError = (error: unknown): void => {
+  if (error instanceof PromptBackError) {
+    return;
+  }
+  if (isExitPromptError(error)) {
+    process.stdout.write('\n');
+    printSuccess('Session closed');
+    process.exit(0);
+  }
+
   const message = error instanceof Error ? error.message : String(error);
   printError(message);
   process.exitCode = 1;
@@ -638,45 +919,43 @@ const doctor = async (ctx: CliContext): Promise<void> => {
 const runTxWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('Transaction wizard'),
-        pageSize: 12,
-        choices: [
-          { name: 'Create transaction', value: 'create' },
-          { name: 'Get transaction', value: 'get' },
-          { name: 'Get proof', value: 'proof' },
-          { name: 'Replay transaction', value: 'replay' },
-          { name: 'Retry transaction', value: 'retry' },
-          { name: 'Approve transaction', value: 'approve' },
-          { name: 'Reject transaction', value: 'reject' },
-          { name: 'List wallet transactions', value: 'list' },
-          { name: 'List pending approvals', value: 'pending' },
-          { name: 'List positions', value: 'positions' },
-          { name: 'List escrows', value: 'escrows' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
-    ]);
+    const action = await promptMenuAction(
+      chalk.cyanBright('Transaction wizard'),
+      [
+        { name: 'Create transaction', value: 'create' },
+        { name: 'Get transaction', value: 'get' },
+        { name: 'Get proof', value: 'proof' },
+        { name: 'Replay transaction', value: 'replay' },
+        { name: 'Retry transaction', value: 'retry' },
+        { name: 'Approve transaction', value: 'approve' },
+        { name: 'Reject transaction', value: 'reject' },
+        { name: 'List wallet transactions', value: 'list' },
+        { name: 'List pending approvals', value: 'pending' },
+        { name: 'List positions', value: 'positions' },
+        { name: 'List escrows', value: 'escrows' },
+        { name: 'Back', value: BACK_OPTION },
+      ],
+      12,
+    );
 
     if (action === BACK_OPTION) return;
 
     try {
       if (action === 'create') {
-        const answers = await inquirer.prompt<{
-          walletId: string;
-          type: string;
-          protocol: string;
+        const walletId = await promptWalletId(ctx, 'Select source wallet');
+        if (!walletId) continue;
+
+        const type = await promptIntentType('Intent type:');
+        if (!type) continue;
+        const protocol = await promptProtocolForIntent(type, 'Protocol:');
+        if (!protocol) continue;
+
+        const answers = await promptWithEscBack<{
           intentJson: string;
           gasless: boolean;
           agentId?: string;
           idempotencyKey?: string;
         }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-          { type: 'list', name: 'type', message: 'Intent type:', choices: KNOWN_INTENTS, default: 'query_balance' },
-          { type: 'list', name: 'protocol', message: 'Protocol:', choices: KNOWN_PROTOCOLS, default: 'system-program' },
           { type: 'input', name: 'intentJson', message: 'Intent JSON:', default: '{}' },
           { type: 'confirm', name: 'gasless', message: 'Gasless mode?', default: false },
           { type: 'input', name: 'agentId', message: 'Agent ID (optional):' },
@@ -685,9 +964,9 @@ const runTxWizard = async (ctx: CliContext): Promise<void> => {
 
         const data = await withSpinner('Creating transaction', ctx.options.quiet, () =>
           ctx.client.transaction.create({
-            walletId: answers.walletId,
-            type: answers.type as any,
-            protocol: answers.protocol,
+            walletId,
+            type: type as any,
+            protocol,
             intent: parseJson(answers.intentJson, 'intentJson'),
             gasless: answers.gasless,
             ...(answers.agentId ? { agentId: answers.agentId } : {}),
@@ -696,7 +975,7 @@ const runTxWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'get' || action === 'proof' || action === 'replay' || action === 'retry' || action === 'approve' || action === 'reject') {
-        const { txId } = await inquirer.prompt<{ txId: string }>([
+        const { txId } = await promptWithEscBack<{ txId: string }>([
           { type: 'input', name: 'txId', message: 'Transaction ID:' },
         ]);
 
@@ -710,9 +989,8 @@ const runTxWizard = async (ctx: CliContext): Promise<void> => {
         });
         printData(data, ctx.options.raw);
       } else if (action === 'list' || action === 'pending' || action === 'positions' || action === 'escrows') {
-        const { walletId } = await inquirer.prompt<{ walletId: string }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-        ]);
+        const walletId = await promptWalletId(ctx, 'Select wallet');
+        if (!walletId) continue;
 
         const data = await withSpinner(`Listing ${action}`, ctx.options.quiet, async () => {
           if (action === 'list') return ctx.client.transaction.listByWallet(walletId);
@@ -731,35 +1009,29 @@ const runTxWizard = async (ctx: CliContext): Promise<void> => {
 const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('Policy wizard'),
-        choices: [
-          { name: 'Create policy', value: 'create' },
-          { name: 'List wallet policies', value: 'list' },
-          { name: 'List policy versions', value: 'versions' },
-          { name: 'Get one policy version', value: 'version' },
-          { name: 'Migrate policy', value: 'migrate' },
-          { name: 'Compatibility check', value: 'compat' },
-          { name: 'Evaluate request', value: 'evaluate' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
+    const action = await promptMenuAction(chalk.cyanBright('Policy wizard'), [
+      { name: 'Create policy', value: 'create' },
+      { name: 'List wallet policies', value: 'list' },
+      { name: 'List policy versions', value: 'versions' },
+      { name: 'Get one policy version', value: 'version' },
+      { name: 'Migrate policy', value: 'migrate' },
+      { name: 'Compatibility check', value: 'compat' },
+      { name: 'Evaluate request', value: 'evaluate' },
+      { name: 'Back', value: BACK_OPTION },
     ]);
 
     if (action === BACK_OPTION) return;
 
     try {
       if (action === 'create') {
-        const answers = await inquirer.prompt<{
-          walletId: string;
+        const walletId = await promptWalletId(ctx, 'Select wallet for policy');
+        if (!walletId) continue;
+
+        const answers = await promptWithEscBack<{
           name: string;
           rulesJson: string;
           active: boolean;
         }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
           { type: 'input', name: 'name', message: 'Policy name:' },
           { type: 'input', name: 'rulesJson', message: 'Rules JSON array:', default: '[]' },
           { type: 'confirm', name: 'active', message: 'Active?', default: true },
@@ -767,7 +1039,7 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
 
         const data = await withSpinner('Creating policy', ctx.options.quiet, () =>
           ctx.client.policy.create({
-            walletId: answers.walletId,
+            walletId,
             name: answers.name,
             rules: parseJsonArray(answers.rulesJson, 'rulesJson') as any,
             active: answers.active,
@@ -775,15 +1047,14 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'list') {
-        const { walletId } = await inquirer.prompt<{ walletId: string }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-        ]);
+        const walletId = await promptWalletId(ctx, 'Select wallet');
+        if (!walletId) continue;
         const data = await withSpinner('Listing policies', ctx.options.quiet, () =>
           ctx.client.policy.list(walletId),
         );
         printData(data, ctx.options.raw);
       } else if (action === 'versions') {
-        const { policyId } = await inquirer.prompt<{ policyId: string }>([
+        const { policyId } = await promptWithEscBack<{ policyId: string }>([
           { type: 'input', name: 'policyId', message: 'Policy ID:' },
         ]);
         const data = await withSpinner('Listing versions', ctx.options.quiet, () =>
@@ -791,7 +1062,7 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'version') {
-        const { policyId, version } = await inquirer.prompt<{ policyId: string; version: string }>([
+        const { policyId, version } = await promptWithEscBack<{ policyId: string; version: string }>([
           { type: 'input', name: 'policyId', message: 'Policy ID:' },
           { type: 'input', name: 'version', message: 'Version number:' },
         ]);
@@ -800,7 +1071,7 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'migrate') {
-        const { policyId, targetVersion, mode } = await inquirer.prompt<{
+        const { policyId, targetVersion, mode } = await promptWithEscBack<{
           policyId: string;
           targetVersion: string;
           mode?: string;
@@ -817,7 +1088,7 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'compat') {
-        const { rulesJson } = await inquirer.prompt<{ rulesJson: string }>([
+        const { rulesJson } = await promptWithEscBack<{ rulesJson: string }>([
           { type: 'input', name: 'rulesJson', message: 'Rules JSON array:', default: '[]' },
         ]);
         const data = await withSpinner('Checking compatibility', ctx.options.quiet, () =>
@@ -825,19 +1096,21 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'evaluate') {
-        const answers = await inquirer.prompt<{
-          walletId: string;
-          type: string;
-          protocol: string;
+        const walletId = await promptWalletId(ctx, 'Select wallet for policy evaluation');
+        if (!walletId) continue;
+
+        const type = await promptIntentType('Intent type:');
+        if (!type) continue;
+        const protocol = await promptProtocolForIntent(type, 'Protocol:');
+        if (!protocol) continue;
+
+        const answers = await promptWithEscBack<{
           destination?: string;
           tokenMint?: string;
           amountLamports?: string;
           slippageBps?: string;
           programIds?: string;
         }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-          { type: 'list', name: 'type', message: 'Intent type:', choices: KNOWN_INTENTS, default: 'transfer_sol' },
-          { type: 'list', name: 'protocol', message: 'Protocol:', choices: KNOWN_PROTOCOLS, default: 'system-program' },
           { type: 'input', name: 'destination', message: 'Destination (optional):' },
           { type: 'input', name: 'tokenMint', message: 'Token mint (optional):' },
           { type: 'input', name: 'amountLamports', message: 'Amount lamports (optional):' },
@@ -847,9 +1120,9 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
 
         const data = await withSpinner('Evaluating policy', ctx.options.quiet, () =>
           ctx.client.policy.evaluate({
-            walletId: answers.walletId,
-            type: answers.type,
-            protocol: answers.protocol,
+            walletId,
+            type,
+            protocol,
             ...(answers.destination ? { destination: answers.destination } : {}),
             ...(answers.tokenMint ? { tokenMint: answers.tokenMint } : {}),
             ...(parseOptionalNumber(answers.amountLamports) !== undefined
@@ -872,23 +1145,16 @@ const runPolicyWizard = async (ctx: CliContext): Promise<void> => {
 const runRiskWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('Risk wizard'),
-        choices: [
-          { name: 'List protocol risk profiles', value: 'protocols' },
-          { name: 'Get protocol risk profile', value: 'protocol-get' },
-          { name: 'Set protocol risk profile', value: 'protocol-set' },
-          { name: 'List portfolio controls', value: 'portfolio' },
-          { name: 'Get portfolio controls', value: 'portfolio-get' },
-          { name: 'Set portfolio controls', value: 'portfolio-set' },
-          { name: 'Get chaos config', value: 'chaos' },
-          { name: 'Set chaos config', value: 'chaos-set' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
+    const action = await promptMenuAction(chalk.cyanBright('Risk wizard'), [
+      { name: 'List protocol risk profiles', value: 'protocols' },
+      { name: 'Get protocol risk profile', value: 'protocol-get' },
+      { name: 'Set protocol risk profile', value: 'protocol-set' },
+      { name: 'List portfolio controls', value: 'portfolio' },
+      { name: 'Get portfolio controls', value: 'portfolio-get' },
+      { name: 'Set portfolio controls', value: 'portfolio-set' },
+      { name: 'Get chaos config', value: 'chaos' },
+      { name: 'Set chaos config', value: 'chaos-set' },
+      { name: 'Back', value: BACK_OPTION },
     ]);
 
     if (action === BACK_OPTION) return;
@@ -898,13 +1164,13 @@ const runRiskWizard = async (ctx: CliContext): Promise<void> => {
         const data = await withSpinner('Listing protocol risk', ctx.options.quiet, () => ctx.client.risk.listProtocols());
         printData(data, ctx.options.raw);
       } else if (action === 'protocol-get') {
-        const { protocol } = await inquirer.prompt<{ protocol: string }>([
+        const { protocol } = await promptWithEscBack<{ protocol: string }>([
           { type: 'list', name: 'protocol', message: 'Protocol:', choices: KNOWN_PROTOCOLS },
         ]);
         const data = await withSpinner('Fetching protocol risk', ctx.options.quiet, () => ctx.client.risk.getProtocol(protocol));
         printData(data, ctx.options.raw);
       } else if (action === 'protocol-set') {
-        const { protocol, inputJson } = await inquirer.prompt<{ protocol: string; inputJson: string }>([
+        const { protocol, inputJson } = await promptWithEscBack<{ protocol: string; inputJson: string }>([
           { type: 'list', name: 'protocol', message: 'Protocol:', choices: KNOWN_PROTOCOLS },
           { type: 'input', name: 'inputJson', message: 'Risk JSON object:', default: '{}' },
         ]);
@@ -916,14 +1182,14 @@ const runRiskWizard = async (ctx: CliContext): Promise<void> => {
         const data = await withSpinner('Listing portfolio controls', ctx.options.quiet, () => ctx.client.risk.listPortfolioControls());
         printData(data, ctx.options.raw);
       } else if (action === 'portfolio-get') {
-        const { walletId } = await inquirer.prompt<{ walletId: string }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-        ]);
+        const walletId = await promptWalletId(ctx, 'Select wallet');
+        if (!walletId) continue;
         const data = await withSpinner('Fetching portfolio controls', ctx.options.quiet, () => ctx.client.risk.getPortfolioControls(walletId));
         printData(data, ctx.options.raw);
       } else if (action === 'portfolio-set') {
-        const { walletId, inputJson } = await inquirer.prompt<{ walletId: string; inputJson: string }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
+        const walletId = await promptWalletId(ctx, 'Select wallet');
+        if (!walletId) continue;
+        const { inputJson } = await promptWithEscBack<{ inputJson: string }>([
           { type: 'input', name: 'inputJson', message: 'Portfolio JSON object:', default: '{}' },
         ]);
         const data = await withSpinner('Updating portfolio controls', ctx.options.quiet, () =>
@@ -934,7 +1200,7 @@ const runRiskWizard = async (ctx: CliContext): Promise<void> => {
         const data = await withSpinner('Fetching chaos config', ctx.options.quiet, () => ctx.client.risk.getChaos());
         printData(data, ctx.options.raw);
       } else if (action === 'chaos-set') {
-        const { enabled, failureRatesJson, latencyMs } = await inquirer.prompt<{
+        const { enabled, failureRatesJson, latencyMs } = await promptWithEscBack<{
           enabled?: string;
           failureRatesJson?: string;
           latencyMs?: string;
@@ -960,18 +1226,11 @@ const runRiskWizard = async (ctx: CliContext): Promise<void> => {
 const runStrategyWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('Strategy wizard'),
-        choices: [
-          { name: 'Run backtest', value: 'backtest' },
-          { name: 'Execute paper trade step', value: 'paper-execute' },
-          { name: 'List paper ledger', value: 'paper-list' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
+    const action = await promptMenuAction(chalk.cyanBright('Strategy wizard'), [
+      { name: 'Run backtest', value: 'backtest' },
+      { name: 'Execute paper trade step', value: 'paper-execute' },
+      { name: 'List paper ledger', value: 'paper-list' },
+      { name: 'Back', value: BACK_OPTION },
     ]);
 
     if (action === BACK_OPTION) return;
@@ -984,13 +1243,13 @@ const runStrategyWizard = async (ctx: CliContext): Promise<void> => {
           null,
           0,
         );
-        const { walletId, name, stepsJson, minimumPassRate } = await inquirer.prompt<{
-          walletId: string;
+        const walletId = await promptWalletId(ctx, 'Select wallet for backtest');
+        if (!walletId) continue;
+        const { name, stepsJson, minimumPassRate } = await promptWithEscBack<{
           name: string;
           stepsJson: string;
           minimumPassRate?: string;
         }>([
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
           { type: 'input', name: 'name', message: 'Backtest name:' },
           { type: 'input', name: 'stepsJson', message: 'Steps JSON array:', default: defaultSteps },
           { type: 'input', name: 'minimumPassRate', message: 'Minimum pass rate (0-1, optional):' },
@@ -1006,17 +1265,19 @@ const runStrategyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'paper-execute') {
-        const { agentId, walletId, type, protocol, intentJson } = await inquirer.prompt<{
-          agentId: string;
-          walletId: string;
-          type: string;
-          protocol: string;
+        const walletId = await promptWalletId(ctx, 'Select wallet for paper trade');
+        if (!walletId) continue;
+        const agentId = await promptAgentId(ctx, 'Select agent for paper trade');
+        if (!agentId) continue;
+
+        const type = await promptIntentType('Intent type:');
+        if (!type) continue;
+        const protocol = await promptProtocolForIntent(type, 'Protocol:');
+        if (!protocol) continue;
+
+        const { intentJson } = await promptWithEscBack<{
           intentJson: string;
         }>([
-          { type: 'input', name: 'agentId', message: 'Agent ID:' },
-          { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-          { type: 'list', name: 'type', message: 'Intent type:', choices: KNOWN_INTENTS, default: 'query_balance' },
-          { type: 'list', name: 'protocol', message: 'Protocol:', choices: KNOWN_PROTOCOLS, default: 'system-program' },
           { type: 'input', name: 'intentJson', message: 'Intent JSON:', default: '{}' },
         ]);
         const data = await withSpinner('Executing paper trade', ctx.options.quiet, () =>
@@ -1030,9 +1291,8 @@ const runStrategyWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'paper-list') {
-        const { agentId } = await inquirer.prompt<{ agentId: string }>([
-          { type: 'input', name: 'agentId', message: 'Agent ID:' },
-        ]);
+        const agentId = await promptAgentId(ctx, 'Select agent for paper ledger');
+        if (!agentId) continue;
         const data = await withSpinner('Fetching paper ledger', ctx.options.quiet, () => ctx.client.strategy.paperList(agentId));
         printData(data, ctx.options.raw);
       }
@@ -1045,24 +1305,17 @@ const runStrategyWizard = async (ctx: CliContext): Promise<void> => {
 const runTreasuryWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('Treasury wizard'),
-        choices: [
-          { name: 'Allocate budget', value: 'allocate' },
-          { name: 'Rebalance budget', value: 'rebalance' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
+    const action = await promptMenuAction(chalk.cyanBright('Treasury wizard'), [
+      { name: 'Allocate budget', value: 'allocate' },
+      { name: 'Rebalance budget', value: 'rebalance' },
+      { name: 'Back', value: BACK_OPTION },
     ]);
 
     if (action === BACK_OPTION) return;
 
     try {
       if (action === 'allocate') {
-        const { targetAgentId, lamports, sourceAgentId, reason } = await inquirer.prompt<{
+        const { targetAgentId, lamports, sourceAgentId, reason } = await promptWithEscBack<{
           targetAgentId: string;
           lamports: string;
           sourceAgentId?: string;
@@ -1083,7 +1336,7 @@ const runTreasuryWizard = async (ctx: CliContext): Promise<void> => {
         );
         printData(data, ctx.options.raw);
       } else if (action === 'rebalance') {
-        const { sourceAgentId, targetAgentId, lamports, reason } = await inquirer.prompt<{
+        const { sourceAgentId, targetAgentId, lamports, reason } = await promptWithEscBack<{
           sourceAgentId: string;
           targetAgentId: string;
           lamports: string;
@@ -1113,17 +1366,10 @@ const runTreasuryWizard = async (ctx: CliContext): Promise<void> => {
 const runMcpWizard = async (ctx: CliContext): Promise<void> => {
   while (true) {
     printPromptHint();
-    const { action } = await inquirer.prompt<{ action: string }>([
-      {
-        type: 'list',
-        name: 'action',
-        message: chalk.cyanBright('MCP wizard'),
-        choices: [
-          { name: 'List tools', value: 'tools' },
-          { name: 'Call tool', value: 'call' },
-          { name: 'Back', value: BACK_OPTION },
-        ],
-      },
+    const action = await promptMenuAction(chalk.cyanBright('MCP wizard'), [
+      { name: 'List tools', value: 'tools' },
+      { name: 'Call tool', value: 'call' },
+      { name: 'Back', value: BACK_OPTION },
     ]);
 
     if (action === BACK_OPTION) return;
@@ -1133,7 +1379,7 @@ const runMcpWizard = async (ctx: CliContext): Promise<void> => {
         const data = await withSpinner('Listing MCP tools', ctx.options.quiet, () => ctx.client.mcp.tools());
         printData(data, ctx.options.raw);
       } else if (action === 'call') {
-        const { tool, argsJson } = await inquirer.prompt<{ tool: string; argsJson: string }>([
+        const { tool, argsJson } = await promptWithEscBack<{ tool: string; argsJson: string }>([
           { type: 'input', name: 'tool', message: 'Tool name:' },
           { type: 'input', name: 'argsJson', message: 'Args JSON object:', default: '{}' },
         ]);
@@ -1168,30 +1414,30 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
     while (true) {
       printPromptHint();
 
-      const { action } = await inquirer.prompt<{ action: string }>([
-        {
-          type: 'list',
-          name: 'action',
-          message: chalk.cyanBright('Choose action'),
-          pageSize: 16,
-          choices: [
-            { name: 'Doctor / Health checks', value: 'doctor' },
-            { name: 'Wallet: Create', value: 'wallet-create' },
-            { name: 'Wallet: Get balance', value: 'wallet-balance' },
-            { name: 'Agent: Create', value: 'agent-create' },
-            { name: 'Agent: List', value: 'agent-list' },
-            { name: 'Agent: Execute intent', value: 'agent-exec' },
-            { name: 'Transaction Wizard', value: 'tx-wizard' },
-            { name: 'Policy Wizard', value: 'policy-wizard' },
-            { name: 'Risk Wizard', value: 'risk-wizard' },
-            { name: 'Strategy Wizard', value: 'strategy-wizard' },
-            { name: 'Treasury Wizard', value: 'treasury-wizard' },
-            { name: 'MCP Wizard', value: 'mcp-wizard' },
-            { name: 'Observability: Metrics', value: 'metrics' },
-            { name: 'Exit', value: 'exit' },
-          ],
-        },
-      ]);
+      const action = await promptMenuAction(
+        chalk.cyanBright('Choose action'),
+        [
+          { name: 'Doctor / Health checks', value: 'doctor' },
+          { name: 'Wallet: Create', value: 'wallet-create' },
+          { name: 'Wallet: Get balance', value: 'wallet-balance' },
+          { name: 'Agent: Create', value: 'agent-create' },
+          { name: 'Agent: List', value: 'agent-list' },
+          { name: 'Agent: Execute intent', value: 'agent-exec' },
+          { name: 'Transaction Wizard', value: 'tx-wizard' },
+          { name: 'Policy Wizard', value: 'policy-wizard' },
+          { name: 'Risk Wizard', value: 'risk-wizard' },
+          { name: 'Strategy Wizard', value: 'strategy-wizard' },
+          { name: 'Treasury Wizard', value: 'treasury-wizard' },
+          { name: 'MCP Wizard', value: 'mcp-wizard' },
+          { name: 'Observability: Metrics', value: 'metrics' },
+          { name: 'Exit', value: 'exit' },
+        ],
+        16,
+      );
+
+      if (action === BACK_OPTION) {
+        continue;
+      }
 
       if (action === 'exit') {
         printSuccess('Session closed');
@@ -1202,7 +1448,7 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
         if (action === 'doctor') {
           await doctor(ctx);
         } else if (action === 'wallet-create') {
-          const { label, autoFund, fundLamports } = await inquirer.prompt<{
+          const { label, autoFund, fundLamports } = await promptWithEscBack<{
             label: string;
             autoFund: boolean;
             fundLamports?: string;
@@ -1226,19 +1472,20 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
           );
           printData(data, ctx.options.raw);
         } else if (action === 'wallet-balance') {
-          const { walletId } = await inquirer.prompt<{ walletId: string }>([
-            { type: 'input', name: 'walletId', message: 'Wallet ID:' },
-          ]);
+          const walletId = await promptWalletId(ctx, 'Select wallet');
+          if (!walletId) {
+            continue;
+          }
           const data = await withSpinner('Fetching balance', ctx.options.quiet, () =>
             ctx.client.wallet.getBalance(walletId),
           );
           printData(data, ctx.options.raw);
         } else if (action === 'agent-create') {
-          const answers = await inquirer.prompt<{
+          const answers = await promptWithEscBack<{
             name: string;
             mode: 'autonomous' | 'supervised';
-            intentsCsv: string;
-            walletId?: string;
+            intents: string[];
+            attachWallet: boolean;
           }>([
             { type: 'input', name: 'name', message: 'Agent name:' },
             {
@@ -1249,20 +1496,36 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
               default: 'autonomous',
             },
             {
-              type: 'input',
-              name: 'intentsCsv',
-              message: 'Allowed intents (comma separated):',
-              default: 'query_balance,transfer_sol',
+              type: 'checkbox',
+              name: 'intents',
+              message: 'Allowed intents (space to toggle, enter to confirm):',
+              choices: KNOWN_INTENTS.map((intent) => ({
+                name: intent,
+                value: intent,
+                checked: intent === 'query_balance' || intent === 'transfer_sol',
+              })),
+              validate: (selected: unknown) =>
+                Array.isArray(selected) && selected.length > 0
+                  ? true
+                  : 'Select at least one intent',
             },
-            { type: 'input', name: 'walletId', message: 'Wallet ID (optional):' },
+            { type: 'confirm', name: 'attachWallet', message: 'Attach existing wallet?', default: true },
           ]);
+
+          let walletId: string | null = null;
+          if (answers.attachWallet) {
+            walletId = await promptWalletId(ctx, 'Select wallet to attach');
+            if (!walletId) {
+              continue;
+            }
+          }
 
           const data = await withSpinner('Creating agent', ctx.options.quiet, () =>
             ctx.client.agent.create({
               name: answers.name,
               executionMode: answers.mode,
-              allowedIntents: parseCsv(answers.intentsCsv) as unknown as any,
-              ...(answers.walletId ? { walletId: answers.walletId } : {}),
+              allowedIntents: answers.intents as unknown as any,
+              ...(walletId ? { walletId } : {}),
             }),
           );
           printData(data, ctx.options.raw);
@@ -1270,28 +1533,24 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
           const data = await withSpinner('Listing agents', ctx.options.quiet, () => ctx.client.agent.list());
           printData(data, ctx.options.raw);
         } else if (action === 'agent-exec') {
-          const answers = await inquirer.prompt<{
-            agentId: string;
-            type: string;
-            protocol: string;
+          const agentId = await promptAgentId(ctx, 'Select agent');
+          if (!agentId) {
+            continue;
+          }
+
+          const type = await promptIntentType('Intent type:');
+          if (!type) {
+            continue;
+          }
+          const protocol = await promptProtocolForIntent(type, 'Protocol:');
+          if (!protocol) {
+            continue;
+          }
+
+          const answers = await promptWithEscBack<{
             intentJson: string;
             gasless: boolean;
           }>([
-            { type: 'input', name: 'agentId', message: 'Agent ID:' },
-            {
-              type: 'list',
-              name: 'type',
-              message: 'Intent type:',
-              choices: KNOWN_INTENTS,
-              default: 'query_balance',
-            },
-            {
-              type: 'list',
-              name: 'protocol',
-              message: 'Protocol:',
-              choices: KNOWN_PROTOCOLS,
-              default: 'system-program',
-            },
             {
               type: 'input',
               name: 'intentJson',
@@ -1309,9 +1568,9 @@ const runInteractive = async (ctx: CliContext): Promise<void> => {
           const intent = parseJson(answers.intentJson, 'intentJson');
 
           const data = await withSpinner('Executing intent', ctx.options.quiet, () =>
-            ctx.client.agent.execute(answers.agentId, {
-              type: answers.type as any,
-              protocol: answers.protocol,
+            ctx.client.agent.execute(agentId, {
+              type: type as any,
+              protocol,
               intent,
               gasless: answers.gasless,
             }),
@@ -1585,27 +1844,16 @@ agent.command('shell <agentId>').description('Interactive execution shell for on
     while (true) {
       printPromptHint();
 
-      const answers = await inquirer.prompt<{
-        intentType: string;
-        protocol: string;
+      const intentType = await promptIntentType('Intent type');
+      if (!intentType) return;
+      const protocol = await promptProtocolForIntent(intentType, 'Protocol');
+      if (!protocol) return;
+
+      const answers = await promptWithEscBack<{
         intentJson: string;
         gasless: boolean;
         again: boolean;
       }>([
-        {
-          type: 'list',
-          name: 'intentType',
-          message: 'Intent type',
-          choices: KNOWN_INTENTS,
-          default: 'query_balance',
-        },
-        {
-          type: 'list',
-          name: 'protocol',
-          message: 'Protocol',
-          choices: KNOWN_PROTOCOLS,
-          default: 'system-program',
-        },
         {
           type: 'input',
           name: 'intentJson',
@@ -1622,8 +1870,8 @@ agent.command('shell <agentId>').description('Interactive execution shell for on
 
       const result = await withSpinner('Executing', ctx.options.quiet, () =>
         ctx.client.agent.execute(agentId, {
-          type: answers.intentType as any,
-          protocol: answers.protocol,
+          type: intentType as any,
+          protocol,
           intent: parseJson(answers.intentJson, 'intentJson'),
           gasless: answers.gasless,
         }),
@@ -1631,7 +1879,7 @@ agent.command('shell <agentId>').description('Interactive execution shell for on
 
       printData(result, ctx.options.raw);
 
-      const { again } = await inquirer.prompt<{ again: boolean }>([
+      const { again } = await promptWithEscBack<{ again: boolean }>([
         {
           type: 'confirm',
           name: 'again',

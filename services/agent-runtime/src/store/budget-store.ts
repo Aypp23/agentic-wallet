@@ -99,4 +99,9 @@ export class BudgetStore {
     const targetNext = this.setBudget(target.agentId, target.walletId, target.budgetLamports + amount);
     return { source: sourceNext, target: targetNext };
   }
+
+  clear(): void {
+    this.budgets.clear();
+    this.persist();
+  }
 }

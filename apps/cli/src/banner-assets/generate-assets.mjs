@@ -163,7 +163,7 @@ const buildFrame = (layout, state) => {
   const reveal = TAGLINE.slice(0, clamp(state.revealChars, 0, TAGLINE.length)).padEnd(TAGLINE.length, ' ');
   drawText(canvas, 4, layout.height - 4, `• ${reveal}`, 'subtitle');
   drawText(canvas, 4, layout.height - 3, '• mode: interactive', 'meta');
-  drawText(canvas, 4, layout.height - 2, '> Enter @ for files, / for commands, Ctrl+C to quit', 'prompt');
+  drawText(canvas, 4, layout.height - 2, '> Enter @ for files, / for commands, Esc back, Ctrl+C exit', 'prompt');
 
   return toLines(canvas);
 };

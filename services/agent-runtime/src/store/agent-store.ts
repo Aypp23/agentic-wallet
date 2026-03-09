@@ -34,4 +34,9 @@ export class AgentStore {
   list(): Agent[] {
     return [...this.agents.values()];
   }
+
+  clear(): void {
+    this.agents.clear();
+    this.persist();
+  }
 }

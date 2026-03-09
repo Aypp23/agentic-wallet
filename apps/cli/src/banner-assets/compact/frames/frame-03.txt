@@ -11,5 +11,5 @@
 │                                                                            │
 │   • Plan, ex                                                               │
 │ │ • mode: interactive                                                    │ │
-│ └─> Enter @ for files, / for commands, Ctrl+C to quit                  ──┘ │
+│ └─> Enter @ for files, / for commands, Esc back, Ctrl+C exit           ──┘ │
 ╰────────────────────────────────────────────────────────────────────────────╯

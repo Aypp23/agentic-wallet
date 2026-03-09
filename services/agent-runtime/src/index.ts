@@ -354,6 +354,25 @@ app.get('/api/v1/agents', (c) => {
   return c.json({ data: store.list().map((agent) => agentSchema.parse(agent)) });
 });
 
+app.delete('/api/v1/agents', (c) => {
+  const existing = store.list();
+  for (const agent of existing) {
+    scheduler.stop(agent.id);
+  }
+
+  store.clear();
+  budgetStore.clear();
+  strategyStore.clear();
+  decisionStates.clear();
+
+  return c.json({
+    data: {
+      cleared: true,
+      removedAgents: existing.length,
+    },
+  });
+});
+
 app.get('/api/v1/agents/:agentId', (c) => {
   const agent = store.get(c.req.param('agentId'));
   if (!agent) {
