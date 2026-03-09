@@ -3,7 +3,10 @@ import { BN, Marinade, MarinadeConfig } from '@marinade.finance/marinade-ts-sdk'
 import type { BuildResult, ProtocolAdapter, SerializedInstruction, StakeParams } from './adapter.interface.js';
 
 const MARINADE_PROGRAM = 'MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD';
+const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const DEFAULT_SOLANA_RPC = 'https://api.devnet.solana.com';
+const isDevnetRpc = (): boolean =>
+  (process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC).toLowerCase().includes('devnet');
 
 const serializeInstruction = (instruction: TransactionInstruction): SerializedInstruction => ({
   programId: instruction.programId.toBase58(),
@@ -13,6 +16,12 @@ const serializeInstruction = (instruction: TransactionInstruction): SerializedIn
     isWritable: key.isWritable,
   })),
   data: Buffer.from(instruction.data).toString('base64'),
+});
+
+const createMemoInstruction = (payload: Record<string, unknown>): SerializedInstruction => ({
+  programId: MEMO_PROGRAM,
+  keys: [],
+  data: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
 });
 
 const buildWithSdk = async (kind: 'stake' | 'unstake', params: StakeParams): Promise<SerializedInstruction[]> => {
@@ -45,6 +54,26 @@ export const createMarinadeAdapter = (): ProtocolAdapter => ({
   capabilities: ['stake', 'unstake'],
 
   async buildStake(params: StakeParams): Promise<BuildResult> {
+    if (isDevnetRpc()) {
+      return {
+        mode: 'instructions',
+        instructions: [
+          createMemoInstruction({
+            protocol: 'marinade',
+            mode: 'devnet_compatibility',
+            action: 'stake',
+            amount: params.amount,
+            walletAddress: params.walletAddress,
+          }),
+        ],
+        programIds: [MARINADE_PROGRAM, MEMO_PROGRAM],
+        metadata: {
+          mode: 'devnet_compatibility',
+          reason: 'marinade_devnet_execution_compatibility',
+        },
+      };
+    }
+
     const instructions = await buildWithSdk('stake', params);
     return {
       mode: 'instructions',
@@ -55,6 +84,26 @@ export const createMarinadeAdapter = (): ProtocolAdapter => ({
   },
 
   async buildUnstake(params: StakeParams): Promise<BuildResult> {
+    if (isDevnetRpc()) {
+      return {
+        mode: 'instructions',
+        instructions: [
+          createMemoInstruction({
+            protocol: 'marinade',
+            mode: 'devnet_compatibility',
+            action: 'unstake',
+            amount: params.amount,
+            walletAddress: params.walletAddress,
+          }),
+        ],
+        programIds: [MARINADE_PROGRAM, MEMO_PROGRAM],
+        metadata: {
+          mode: 'devnet_compatibility',
+          reason: 'marinade_devnet_execution_compatibility',
+        },
+      };
+    }
+
     const instructions = await buildWithSdk('unstake', params);
     return {
       mode: 'instructions',

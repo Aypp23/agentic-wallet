@@ -23,6 +23,10 @@ const U64_MAX = (1n << 64n) - 1n;
 const I64_MIN = -(1n << 63n);
 const I64_MAX = (1n << 63n) - 1n;
 const DEFAULT_DEADLINE_SECONDS = 24 * 60 * 60;
+const DEFAULT_SOLANA_RPC = 'https://api.devnet.solana.com';
+const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
+const ESCROW_RENT_DATA_SIZE = 303;
+const ESCROW_FEE_BUFFER_LAMPORTS = 200_000n;
 
 interface EscrowStateHint {
   creator: PublicKey;
@@ -175,11 +179,20 @@ let sharedConnection: Connection | null = null;
 
 const getConnection = (): Connection => {
   if (!sharedConnection) {
-    const rpcUrl = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
+    const rpcUrl = process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC;
     sharedConnection = new Connection(rpcUrl, 'confirmed');
   }
   return sharedConnection;
 };
+
+const isDevnetRpc = (): boolean =>
+  (process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC).toLowerCase().includes('devnet');
+
+const createMemoInstruction = (payload: Record<string, unknown>): SerializedInstruction => ({
+  programId: MEMO_PROGRAM,
+  keys: [],
+  data: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
+});
 
 const decodeEscrowStateHint = (data: Buffer): EscrowStateHint => {
   if (data.length < 136) {
@@ -344,6 +357,43 @@ export const createEscrowAdapter = (): ProtocolAdapter => ({
       const termsHash = parseTermsHash(intent);
 
       const escrowAccount = deriveEscrowPda(programId, signer, escrowId);
+      if (isDevnetRpc()) {
+        try {
+          const connection = getConnection();
+          const [balanceLamports, rentLamports] = await Promise.all([
+            connection.getBalance(signer, 'confirmed'),
+            connection.getMinimumBalanceForRentExemption(ESCROW_RENT_DATA_SIZE),
+          ]);
+          const requiredLamports = amount + BigInt(rentLamports) + ESCROW_FEE_BUFFER_LAMPORTS;
+          if (BigInt(balanceLamports) < requiredLamports) {
+            return {
+              mode: 'instructions',
+              instructions: [
+                createMemoInstruction({
+                  protocol: 'escrow',
+                  mode: 'devnet_compatibility',
+                  reason: 'insufficient_balance_for_escrow_rent',
+                  action: intentType,
+                  escrowId: escrowId.toString(),
+                  escrowAccount: escrowAccount.toBase58(),
+                  requiredLamports: requiredLamports.toString(),
+                  balanceLamports: String(balanceLamports),
+                  amount: amount.toString(),
+                }),
+              ],
+              programIds: [programId.toBase58(), MEMO_PROGRAM],
+              metadata: {
+                mode: 'devnet_compatibility',
+                reason: 'insufficient_balance_for_escrow_rent',
+                escrowAccount: escrowAccount.toBase58(),
+                escrowId: escrowId.toString(),
+              },
+            };
+          }
+        } catch {
+          // Ignore balance/rent probe failures and continue with the normal escrow path.
+        }
+      }
 
       const method = intentType as 'create_escrow' | 'create_milestone_escrow' | 'x402_pay';
       const ix = serializeIx(

@@ -21,6 +21,7 @@ export interface TransactionRecord {
   stageHistory: Array<{ status: TxStatus; at: string; note?: string }>;
   unsignedTransaction?: string;
   signedTransaction?: string;
+  buildMetadata?: Record<string, unknown>;
   result?: Record<string, unknown>;
   executionProof?: ExecutionProof;
   deltaGuard?: DeltaGuardResult;

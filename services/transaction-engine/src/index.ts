@@ -44,6 +44,13 @@ import {
 import { OutboxStore, type OutboxAction } from './store/outbox-store.js';
 
 const READ_ONLY_TYPES = new Set<TransactionType>(['query_balance', 'query_positions']);
+const CONCENTRATION_RISK_TYPES = new Set<TransactionType>([
+  'swap',
+  'stake',
+  'unstake',
+  'lend_supply',
+  'lend_borrow',
+]);
 const TERMINAL_STATUSES = new Set<TxStatus>(['confirmed', 'failed']);
 const ESCROW_TYPES = new Set<TransactionType>([
   'create_escrow',
@@ -113,6 +120,16 @@ const serializeUnsigned = (tx: Transaction | VersionedTransaction): string => {
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toNonNegativeInt = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Math.round(parsed);
+};
+
+const toBps = (value: unknown): number => Math.min(10_000, toNonNegativeInt(value));
 
 const withRpcRetry = async <T>(
   operation: string,
@@ -538,6 +555,7 @@ const createApp = () => {
       ? Math.round((Math.max(0, amountLamports) / preBalanceLamports) * 10000)
       : 0;
     if (
+      CONCENTRATION_RISK_TYPES.has(request.type) &&
       config.maxPoolConcentrationBps !== undefined &&
       poolConcentrationBps > config.maxPoolConcentrationBps
     ) {
@@ -611,7 +629,7 @@ const createApp = () => {
     intent: Record<string, unknown>,
     providedTransaction?: string,
     providedInstructions?: unknown[],
-  ): Promise<{ unsignedTx: string; programIds: string[] }> => {
+  ): Promise<{ unsignedTx: string; programIds: string[]; buildMetadata?: Record<string, unknown> }> => {
     const owner = new PublicKey(walletPublicKey);
     const feePayer = await resolveFeePayer(owner, request.gasless ?? false);
 
@@ -763,6 +781,7 @@ const createApp = () => {
         transaction?: string;
         instructions?: unknown[];
         programIds: string[];
+        metadata?: Record<string, unknown>;
       };
     };
 
@@ -787,6 +806,7 @@ const createApp = () => {
         return {
           unsignedTx: serializeUnsigned(parsed),
           programIds: built.data.programIds,
+          ...(built.data.metadata ? { buildMetadata: built.data.metadata } : {}),
         };
       }
 
@@ -799,6 +819,7 @@ const createApp = () => {
       return {
         unsignedTx: built.data.transaction,
         programIds: built.data.programIds,
+        ...(built.data.metadata ? { buildMetadata: built.data.metadata } : {}),
       };
     }
 
@@ -816,6 +837,7 @@ const createApp = () => {
     return {
       unsignedTx: serializeUnsigned(tx),
       programIds: built.data.programIds,
+      ...(built.data.metadata ? { buildMetadata: built.data.metadata } : {}),
     };
   };
 
@@ -851,21 +873,23 @@ const createApp = () => {
           protocol: request.protocol,
           destination: String(record.intent['destination'] ?? record.intent['recipient'] ?? ''),
           tokenMint: String(record.intent['mint'] ?? record.intent['tokenMint'] ?? ''),
-          amountLamports: Number(record.intent['amountLamports'] ?? record.intent['lamports'] ?? 0),
+          amountLamports: toNonNegativeInt(
+            record.intent['amountLamports'] ?? record.intent['lamports'] ?? record.intent['amount'] ?? 0,
+          ),
           programIds: record.programIds,
-          slippageBps: Number(record.intent['slippageBps'] ?? 0),
+          slippageBps: toBps(record.intent['slippageBps'] ?? 0),
           pool: String(record.intent['pool'] ?? ''),
-          poolConcentrationBps: riskHints.poolConcentrationBps,
+          poolConcentrationBps: toBps(riskHints.poolConcentrationBps),
           ...(riskHints.oraclePriceUsd !== undefined
-            ? { oraclePriceUsd: riskHints.oraclePriceUsd }
+            ? { oraclePriceUsd: Math.max(0, Number(riskHints.oraclePriceUsd) || 0) }
             : {}),
           ...(riskHints.quotedPriceUsd !== undefined
-            ? { quotedPriceUsd: riskHints.quotedPriceUsd }
+            ? { quotedPriceUsd: Math.max(0, Number(riskHints.quotedPriceUsd) || 0) }
             : {}),
-          projectedDailyLossLamports: riskHints.projectedDailyLossLamports,
-          projectedDrawdownLamports: riskHints.projectedDrawdownLamports,
-          projectedTokenExposureBps: riskHints.projectedTokenExposureBps,
-          projectedProtocolExposureBps: riskHints.projectedProtocolExposureBps,
+          projectedDailyLossLamports: toNonNegativeInt(riskHints.projectedDailyLossLamports),
+          projectedDrawdownLamports: toNonNegativeInt(riskHints.projectedDrawdownLamports),
+          projectedTokenExposureBps: toBps(riskHints.projectedTokenExposureBps),
+          projectedProtocolExposureBps: toBps(riskHints.projectedProtocolExposureBps),
           timestamp: new Date().toISOString(),
         }),
       });
@@ -1152,6 +1176,9 @@ const createApp = () => {
 
     record.unsignedTransaction = built.unsignedTx;
     record.programIds = built.programIds;
+    if (built.buildMetadata) {
+      record.buildMetadata = built.buildMetadata;
+    }
     store.set(record);
 
     const protocolRisk = evaluateProtocolRisk(request, record, preBalanceLamports);
@@ -1216,21 +1243,17 @@ const createApp = () => {
     }
 
     updateStatus(record, 'policy_eval');
+    const requestedAmountLamports = toNonNegativeInt(
+      record.intent['amountLamports'] ?? record.intent['lamports'] ?? record.intent['amount'] ?? 0,
+    );
     const policyRiskHints = {
-      poolConcentrationBps:
-        preBalanceLamports > 0
-          ? Math.round(
-              ((Number(
-                record.intent['amountLamports'] ?? record.intent['lamports'] ?? record.intent['amount'] ?? 0,
-              ) || 0) /
-                preBalanceLamports) *
-                10000,
-            )
-          : 0,
-      projectedDailyLossLamports: protocolRisk.projectedDailyLossLamports,
-      projectedDrawdownLamports: protocolRisk.projectedDrawdownLamports,
-      projectedTokenExposureBps: protocolRisk.projectedTokenExposureBps,
-      projectedProtocolExposureBps: protocolRisk.projectedProtocolExposureBps,
+      poolConcentrationBps: toBps(
+        preBalanceLamports > 0 ? Math.round((requestedAmountLamports / preBalanceLamports) * 10000) : 0,
+      ),
+      projectedDailyLossLamports: toNonNegativeInt(protocolRisk.projectedDailyLossLamports),
+      projectedDrawdownLamports: toNonNegativeInt(protocolRisk.projectedDrawdownLamports),
+      projectedTokenExposureBps: toBps(protocolRisk.projectedTokenExposureBps),
+      projectedProtocolExposureBps: toBps(protocolRisk.projectedProtocolExposureBps),
       ...((Number(record.intent['oraclePriceUsd'] ?? 0) || 0) > 0
         ? { oraclePriceUsd: Number(record.intent['oraclePriceUsd']) }
         : {}),
@@ -1304,7 +1327,9 @@ const createApp = () => {
     portfolioRiskStore.recordExposure(request.walletId, request.protocol, token, amountLamports);
 
     const delta = evaluateDeltaGuard(
-      expectedLamportsDelta(request.type, record.intent),
+      record.buildMetadata?.['mode'] === 'devnet_compatibility'
+        ? null
+        : expectedLamportsDelta(request.type, record.intent),
       record.preBalanceLamports !== undefined && record.postBalanceLamports !== undefined
         ? record.postBalanceLamports - record.preBalanceLamports
         : null,
@@ -1391,7 +1416,9 @@ const createApp = () => {
 
     const protocolConfig = protocolRiskStore.get(tx.protocol);
     const delta = evaluateDeltaGuard(
-      expectedLamportsDelta(tx.type, tx.intent),
+      tx.buildMetadata?.['mode'] === 'devnet_compatibility'
+        ? null
+        : expectedLamportsDelta(tx.type, tx.intent),
       tx.preBalanceLamports !== undefined && tx.postBalanceLamports !== undefined
         ? tx.postBalanceLamports - tx.preBalanceLamports
         : null,

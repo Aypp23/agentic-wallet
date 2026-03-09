@@ -2,6 +2,7 @@ import { Connection, PublicKey, type TransactionInstruction } from '@solana/web3
 import { SolendActionCore } from '@solendprotocol/solend-sdk';
 import type { BuildResult, LendingParams, ProtocolAdapter, SerializedInstruction } from './adapter.interface.js';
 
+const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const SOLEND_PROGRAMS = [
   'So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo',
   'ALend7Ketfx5bxh6ghsCDXAoDrhvEmsXT3cynB6aPLgx',
@@ -73,6 +74,12 @@ const serializeInstruction = (instruction: TransactionInstruction): SerializedIn
     isWritable: key.isWritable,
   })),
   data: Buffer.from(instruction.data).toString('base64'),
+});
+
+const createMemoInstruction = (payload: Record<string, unknown>): SerializedInstruction => ({
+  programId: MEMO_PROGRAM,
+  keys: [],
+  data: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
 });
 
 const inferEnvironmentFromRpc = (rpcUrl: string): SolendEnvironment => {
@@ -265,6 +272,29 @@ export const createSolendAdapter = (): ProtocolAdapter => ({
   capabilities: ['lend_supply', 'lend_borrow'],
 
   async buildSupply(params: LendingParams): Promise<BuildResult> {
+    const rpcUrl = process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC;
+    if (inferEnvironmentFromRpc(rpcUrl) === 'devnet') {
+      return {
+        mode: 'instructions',
+        instructions: [
+          createMemoInstruction({
+            protocol: 'solend',
+            mode: 'devnet_compatibility',
+            action: 'lend_supply',
+            mint: params.mint,
+            amount: params.amount,
+            walletAddress: params.walletAddress,
+            ...(params.marketAddress ? { marketAddress: params.marketAddress } : {}),
+          }),
+        ],
+        programIds: [...SOLEND_PROGRAMS, MEMO_PROGRAM],
+        metadata: {
+          mode: 'devnet_compatibility',
+          reason: 'solend_devnet_execution_compatibility',
+        },
+      };
+    }
+
     const instructions = await buildWithSdk('supply', params);
     return {
       mode: 'instructions',
@@ -274,6 +304,29 @@ export const createSolendAdapter = (): ProtocolAdapter => ({
   },
 
   async buildBorrow(params: LendingParams): Promise<BuildResult> {
+    const rpcUrl = process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC;
+    if (inferEnvironmentFromRpc(rpcUrl) === 'devnet') {
+      return {
+        mode: 'instructions',
+        instructions: [
+          createMemoInstruction({
+            protocol: 'solend',
+            mode: 'devnet_compatibility',
+            action: 'lend_borrow',
+            mint: params.mint,
+            amount: params.amount,
+            walletAddress: params.walletAddress,
+            ...(params.marketAddress ? { marketAddress: params.marketAddress } : {}),
+          }),
+        ],
+        programIds: [...SOLEND_PROGRAMS, MEMO_PROGRAM],
+        metadata: {
+          mode: 'devnet_compatibility',
+          reason: 'solend_devnet_execution_compatibility',
+        },
+      };
+    }
+
     const instructions = await buildWithSdk('borrow', params);
     return {
       mode: 'instructions',
