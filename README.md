@@ -319,5 +319,3 @@ Fixes:
 - Deep dive: [`docs/DEEP_DIVE.md`](./docs/DEEP_DIVE.md)
 - Security: [`docs/SECURITY.md`](./docs/SECURITY.md)
 - Agent integration contract: [`SKILLS.md`](./SKILLS.md)
-- Build plan: [`plan.md`](./plan.md)
-- Bounty task: [`task.md`](./task.md)
