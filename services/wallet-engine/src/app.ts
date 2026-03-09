@@ -23,9 +23,28 @@ import type { WalletEngineConfig } from './config.js';
 import { WalletMetadataStore } from './storage/metadata-store.js';
 import { createKeyProvider } from './key-provider/factory.js';
 
-const serializeLegacySignature = (tx: Transaction): string => {
-  const signature = tx.signature ?? tx.signatures[0]?.signature;
+const serializeLegacySignature = (tx: Transaction, signer: Keypair): string => {
+  const signature = tx.signatures.find(
+    (entry) => entry.publicKey.equals(signer.publicKey) && entry.signature !== null,
+  )?.signature;
   if (!signature) throw new Error('Transaction signature missing after signing');
+  return bs58.encode(signature);
+};
+
+const serializeVersionedSignature = (tx: VersionedTransaction, signer: Keypair): string => {
+  const requiredSigners = tx.message.header.numRequiredSignatures;
+  const signerIndex = tx.message.staticAccountKeys
+    .slice(0, requiredSigners)
+    .findIndex((key) => key.equals(signer.publicKey));
+
+  if (signerIndex < 0) {
+    throw new Error(`Signer ${signer.publicKey.toBase58()} not present in transaction account keys`);
+  }
+
+  const signature = tx.signatures[signerIndex];
+  if (!signature) {
+    throw new Error('Versioned transaction signature missing after signing');
+  }
   return bs58.encode(signature);
 };
 
@@ -38,21 +57,17 @@ const signSerializedTransaction = (
   try {
     const tx = VersionedTransaction.deserialize(raw);
     tx.sign([signer]);
-    const signature = tx.signatures[0];
-    if (!signature) {
-      throw new Error('Versioned transaction signature missing after signing');
-    }
     return {
       signedTransaction: Buffer.from(tx.serialize()).toString('base64'),
-      signature: bs58.encode(signature),
+      signature: serializeVersionedSignature(tx, signer),
       txVersion: 'v0',
     };
   } catch {
     const tx = Transaction.from(raw);
-    tx.sign(signer);
+    tx.partialSign(signer);
     return {
       signedTransaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'),
-      signature: serializeLegacySignature(tx),
+      signature: serializeLegacySignature(tx, signer),
       txVersion: 'legacy',
     };
   }

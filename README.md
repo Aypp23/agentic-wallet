@@ -363,7 +363,31 @@ Operational note:
 
 - `ESCROW_PROGRAM_ID=<deployed_program_id>`
 - `KORA_RPC_URL`
+- `KORA_PRIVATE_KEY` (optional; defaults to `PRIVATE_KEY` in provided npm scripts)
 - `PRIVATE_KEY` (for deploy/funding workflows)
+
+### Kora operator (local devnet)
+
+Kora config lives in [`infrastructure/kora/kora.toml`](./infrastructure/kora/kora.toml), with signer pool config in [`infrastructure/kora/signers.toml`](./infrastructure/kora/signers.toml).
+
+Validate config:
+
+```bash
+npm run kora:validate
+npm run kora:validate:rpc
+```
+
+Start Kora RPC on `http://localhost:8080`:
+
+```bash
+npm run kora:start
+```
+
+Then run a gasless intent from CLI (`Gasless via Kora? Yes`) or command mode:
+
+```bash
+npm run cli -- tx create --wallet-id <walletId> --type transfer_sol --protocol system-program --intent '{"destination":"<toWalletId>","lamports":1000000}' --gasless
+```
 
 ## Escrow Program (On-chain Anchor)
 

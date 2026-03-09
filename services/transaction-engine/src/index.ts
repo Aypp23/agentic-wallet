@@ -13,6 +13,7 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
+import bs58 from 'bs58';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -212,6 +213,7 @@ const createApp = () => {
     process.env.DELTA_GUARD_ABSOLUTE_TOLERANCE_LAMPORTS ?? 10_000,
   );
   let destinationRentExemptionLamports: number | null = null;
+  let koraSignerCache: { signer: string; expiresAtMs: number } | null = null;
 
   const rpcPool = new SolanaRpcPool({
     urls: solanaRpcPoolUrls,
@@ -398,6 +400,76 @@ const createApp = () => {
     return destinationRentExemptionLamports;
   };
 
+  const resolveFeePayer = async (owner: PublicKey, gasless: boolean): Promise<PublicKey> => {
+    if (!gasless) {
+      return owner;
+    }
+
+    const now = Date.now();
+    if (koraSignerCache && koraSignerCache.expiresAtMs > now) {
+      return new PublicKey(koraSignerCache.signer);
+    }
+
+    const response = await fetch(koraRpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getPayerSigner',
+      }),
+    });
+
+    const payload = (await response.json()) as {
+      result?: {
+        signer_address?: string;
+        signerAddress?: string;
+      };
+      error?: { message?: string };
+    };
+
+    const signer = String(payload.result?.signer_address ?? payload.result?.signerAddress ?? '').trim();
+    if (!response.ok || payload.error || !signer) {
+      throw new Error(`Kora getPayerSigner failed: ${payload.error?.message ?? 'missing signer address'}`);
+    }
+
+    const signerPk = new PublicKey(signer);
+    koraSignerCache = {
+      signer,
+      expiresAtMs: now + 30_000,
+    };
+    return signerPk;
+  };
+
+  const resolveBuildBlockhash = async (
+    gasless: boolean,
+  ): Promise<{ blockhash: string; lastValidBlockHeight?: number }> => {
+    if (!gasless) {
+      return withLatestBlockhash();
+    }
+
+    const response = await fetch(koraRpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getBlockhash',
+      }),
+    });
+
+    const payload = (await response.json()) as {
+      result?: { blockhash?: string };
+      error?: { message?: string };
+    };
+    const blockhash = String(payload.result?.blockhash ?? '').trim();
+    if (!response.ok || payload.error || !blockhash) {
+      throw new Error(`Kora getBlockhash failed: ${payload.error?.message ?? 'missing blockhash'}`);
+    }
+
+    return { blockhash };
+  };
+
   const resolveAdaptiveExecutionConfig = async (
     type: TransactionType,
     instructionCount: number,
@@ -541,10 +613,16 @@ const createApp = () => {
     providedInstructions?: unknown[],
   ): Promise<{ unsignedTx: string; programIds: string[] }> => {
     const owner = new PublicKey(walletPublicKey);
+    const feePayer = await resolveFeePayer(owner, request.gasless ?? false);
 
     if (providedTransaction) {
       const parsed = parseAnyTx(providedTransaction);
       if (parsed instanceof VersionedTransaction) {
+        if (request.gasless) {
+          throw new Error(
+            'Gasless mode is not supported for prebuilt versioned transactions yet. Provide instructions or use non-gasless mode.',
+          );
+        }
         return { unsignedTx: providedTransaction, programIds: [] };
       }
 
@@ -553,10 +631,12 @@ const createApp = () => {
         parsed.instructions.length,
       );
       applyAdaptiveExecutionConfig(parsed, tunedConfig);
-      const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
       parsed.recentBlockhash = blockhash;
-      parsed.lastValidBlockHeight = lastValidBlockHeight;
-      parsed.feePayer = owner;
+      if (lastValidBlockHeight !== undefined) {
+        parsed.lastValidBlockHeight = lastValidBlockHeight;
+      }
+      parsed.feePayer = feePayer;
 
       return {
         unsignedTx: serializeUnsigned(parsed),
@@ -568,10 +648,12 @@ const createApp = () => {
       const tx = new Transaction().add(...providedInstructions.map((ix) => toTxInstruction(ix)));
       const tunedConfig = await resolveAdaptiveExecutionConfig(request.type, tx.instructions.length);
       applyAdaptiveExecutionConfig(tx, tunedConfig);
-      const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
       tx.recentBlockhash = blockhash;
-      tx.lastValidBlockHeight = lastValidBlockHeight;
-      tx.feePayer = owner;
+      if (lastValidBlockHeight !== undefined) {
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+      }
+      tx.feePayer = feePayer;
 
       return {
         unsignedTx: serializeUnsigned(tx),
@@ -612,10 +694,12 @@ const createApp = () => {
 
       const tunedConfig = await resolveAdaptiveExecutionConfig(request.type, tx.instructions.length);
       applyAdaptiveExecutionConfig(tx, tunedConfig);
-      const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
       tx.recentBlockhash = blockhash;
-      tx.lastValidBlockHeight = lastValidBlockHeight;
-      tx.feePayer = owner;
+      if (lastValidBlockHeight !== undefined) {
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+      }
+      tx.feePayer = feePayer;
 
       return {
         unsignedTx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'),
@@ -645,10 +729,12 @@ const createApp = () => {
 
       const tunedConfig = await resolveAdaptiveExecutionConfig(request.type, tx.instructions.length);
       applyAdaptiveExecutionConfig(tx, tunedConfig);
-      const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
       tx.recentBlockhash = blockhash;
-      tx.lastValidBlockHeight = lastValidBlockHeight;
-      tx.feePayer = owner;
+      if (lastValidBlockHeight !== undefined) {
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+      }
+      tx.feePayer = feePayer;
 
       return {
         unsignedTx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'),
@@ -692,14 +778,22 @@ const createApp = () => {
           parsed.instructions.length,
         );
         applyAdaptiveExecutionConfig(parsed, tunedConfig);
-        const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+        const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
         parsed.recentBlockhash = blockhash;
-        parsed.lastValidBlockHeight = lastValidBlockHeight;
-        parsed.feePayer = owner;
+        if (lastValidBlockHeight !== undefined) {
+          parsed.lastValidBlockHeight = lastValidBlockHeight;
+        }
+        parsed.feePayer = feePayer;
         return {
           unsignedTx: serializeUnsigned(parsed),
           programIds: built.data.programIds,
         };
+      }
+
+      if (request.gasless) {
+        throw new Error(
+          'Gasless mode is not supported for adapter-provided versioned transactions yet. Use non-gasless mode for this intent.',
+        );
       }
 
       return {
@@ -712,10 +806,12 @@ const createApp = () => {
     const tx = new Transaction().add(...instructions);
     const tunedConfig = await resolveAdaptiveExecutionConfig(request.type, tx.instructions.length);
     applyAdaptiveExecutionConfig(tx, tunedConfig);
-    const { blockhash, lastValidBlockHeight } = await withLatestBlockhash();
+    const { blockhash, lastValidBlockHeight } = await resolveBuildBlockhash(request.gasless ?? false);
     tx.recentBlockhash = blockhash;
-    tx.lastValidBlockHeight = lastValidBlockHeight;
-    tx.feePayer = owner;
+    if (lastValidBlockHeight !== undefined) {
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+    }
+    tx.feePayer = feePayer;
 
     return {
       unsignedTx: serializeUnsigned(tx),
@@ -824,7 +920,7 @@ const createApp = () => {
     signedTx: string,
     gasless: boolean,
     existingSignature?: string,
-  ): Promise<{ signature: string }> => {
+  ): Promise<{ signature: string; signedTx?: string }> => {
     if (chaos.shouldFail('submit')) {
       throw new Error('Chaos switchboard forced submit failure');
     }
@@ -845,15 +941,50 @@ const createApp = () => {
       });
 
       const payload = (await response.json()) as {
-        result?: { signature: string };
-        error?: { message: string };
+        result?:
+          | {
+            signature?: string;
+            signed_transaction?: string;
+          }
+          | string;
+        error?: { message?: string; code?: number; data?: unknown };
       };
+      const koraResult =
+        typeof payload.result === 'object' && payload.result !== null ? payload.result : undefined;
+      const signature =
+        typeof payload.result === 'string'
+          ? payload.result
+          : koraResult?.signature;
+      const koraSignedTx = koraResult?.signed_transaction;
+      let resolvedSignature = signature;
 
-      if (!response.ok || payload.error || !payload.result?.signature) {
-        throw new Error(`Kora signAndSendTransaction failed: ${payload.error?.message ?? 'unknown error'}`);
+      if (!resolvedSignature && koraSignedTx) {
+        const parsed = parseAnyTx(koraSignedTx);
+        if (parsed instanceof VersionedTransaction) {
+          const signerSignature = parsed.signatures[0];
+          if (signerSignature) {
+            resolvedSignature = bs58.encode(signerSignature);
+          }
+        } else if (parsed.signature) {
+          resolvedSignature = bs58.encode(parsed.signature);
+        }
       }
 
-      return { signature: payload.result.signature };
+      if (!response.ok || payload.error || !resolvedSignature) {
+        const detail =
+          payload.error?.message ??
+          (payload.error
+            ? JSON.stringify(payload.error)
+            : payload.result !== undefined
+              ? `missing signature in result: ${JSON.stringify(payload.result)}`
+              : null);
+        throw new Error(`Kora signAndSendTransaction failed: ${detail ?? `HTTP ${response.status}`}`);
+      }
+
+      return {
+        signature: resolvedSignature,
+        ...(koraSignedTx ? { signedTx: koraSignedTx } : {}),
+      };
     }
 
     if (existingSignature) {
@@ -976,6 +1107,9 @@ const createApp = () => {
     ) {
       const submitted = await submitSignedTx(record.signedTransaction, request.gasless ?? false, record.signature);
       record.signature = submitted.signature;
+      if (submitted.signedTx) {
+        record.signedTransaction = submitted.signedTx;
+      }
       record.confirmedAt = new Date().toISOString();
 
       if (record.postBalanceLamports === undefined) {
@@ -1155,6 +1289,9 @@ const createApp = () => {
     const submitted = await submitSignedTx(signedTx, request.gasless ?? false);
 
     record.signature = submitted.signature;
+    if (submitted.signedTx) {
+      record.signedTransaction = submitted.signedTx;
+    }
     record.confirmedAt = new Date().toISOString();
     record.postBalanceLamports = await fetchLamports(request.walletId);
     indexPositionsAndEscrows(record);
@@ -1245,6 +1382,9 @@ const createApp = () => {
     updateStatus(tx, 'submitting');
     const submitted = await submitSignedTx(signed.signedTx, tx.gasless);
     tx.signature = submitted.signature;
+    if (submitted.signedTx) {
+      tx.signedTransaction = submitted.signedTx;
+    }
     tx.confirmedAt = new Date().toISOString();
     tx.postBalanceLamports = await fetchLamports(tx.walletId);
     indexPositionsAndEscrows(tx);
