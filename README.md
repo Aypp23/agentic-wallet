@@ -4,6 +4,8 @@ Autonomous wallet infrastructure for AI agents.
 
 This repo ships a working multi-service prototype that lets agents emit intents while the platform handles validation, policy checks, signing boundaries, protocol interaction, submission, and audit proofs.
 
+Hosted documentation: [aypp23-agentic-wallet.mintlify.app](https://aypp23-agentic-wallet.mintlify.app/introduction)
+
 ## Contents
 
 - [What It Does](#what-it-does)
@@ -316,6 +318,7 @@ Fixes:
 
 ## Further Docs
 
+- Hosted docs: [aypp23-agentic-wallet.mintlify.app](https://aypp23-agentic-wallet.mintlify.app/introduction)
 - Deep dive: [`docs/DEEP_DIVE.md`](./docs/DEEP_DIVE.md)
 - Security: [`docs/SECURITY.md`](./docs/SECURITY.md)
 - Agent integration contract: [`SKILLS.md`](./SKILLS.md)
