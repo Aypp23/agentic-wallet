@@ -17,7 +17,6 @@ Hosted documentation: [aypp23-agentic-wallet.mintlify.app](https://aypp23-agenti
 - [Agent Integration](#agent-integration)
 - [Validation and Demo](#validation-and-demo)
 - [Troubleshooting](#troubleshooting)
-- [Known Limitations](#known-limitations)
 - [Further Docs](#further-docs)
 
 ## What It Does
@@ -310,14 +309,14 @@ Fixes:
 - restart with env exported
 - redeploy if needed: `npm run escrow:deploy:devnet`
 
-## Known Limitations
-
-- Some stores remain local/file-backed and are not distributed consensus state.
-- Gasless currently blocks adapter-provided prebuilt versioned tx paths.
-- External protocol upstream dependencies (quotes/build APIs) can degrade availability.
-
 ## Further Docs
 
+- Docs index: [`docs/README.md`](./docs/README.md)
+- Architecture reference: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
+- Protocols and intents: [`docs/PROTOCOLS_AND_INTENTS.md`](./docs/PROTOCOLS_AND_INTENTS.md)
+- Operations runbook: [`docs/OPERATIONS_RUNBOOK.md`](./docs/OPERATIONS_RUNBOOK.md)
+- Testing and validation: [`docs/TESTING_AND_VALIDATION.md`](./docs/TESTING_AND_VALIDATION.md)
 - Hosted docs: [aypp23-agentic-wallet.mintlify.app](https://aypp23-agentic-wallet.mintlify.app/introduction)
 - Deep dive: [`docs/DEEP_DIVE.md`](./docs/DEEP_DIVE.md)
 - Security: [`docs/SECURITY.md`](./docs/SECURITY.md)

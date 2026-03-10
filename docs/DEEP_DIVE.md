@@ -2,6 +2,15 @@
 
 This document explains how the current implementation works under the hood, why key design choices were made, and where the remaining hardening work lives.
 
+Companion references:
+
+- `docs/README.md` (docs index and reading order)
+- `docs/ARCHITECTURE.md` (service graph and trust boundaries)
+- `docs/API_REFERENCE.md` (endpoint-level contracts)
+- `docs/PROTOCOLS_AND_INTENTS.md` (intent/protocol mapping)
+- `docs/OPERATIONS_RUNBOOK.md` (day-2 operations and incidents)
+- `docs/TESTING_AND_VALIDATION.md` (test methodology and evidence)
+
 ## 1) What This System Is
 
 Agentic Wallet is a multi-service Solana execution system where:

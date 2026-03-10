@@ -2,6 +2,15 @@
 
 This document describes the implemented security model, concrete controls in the current codebase, and residual risks that still need production hardening.
 
+Companion references:
+
+- `docs/README.md` (docs index and reading order)
+- `docs/ARCHITECTURE.md` (component boundaries and data flow)
+- `docs/API_REFERENCE.md` (normalized machine error contract)
+- `docs/PROTOCOLS_AND_INTENTS.md` (protocol behavior and safety preconditions)
+- `docs/OPERATIONS_RUNBOOK.md` (incident response procedures)
+- `docs/TESTING_AND_VALIDATION.md` (security-relevant test paths)
+
 ## 1) Security Objectives
 
 Primary security goals:
