@@ -330,7 +330,7 @@ Confirm Kora is running and check the configuration in this order:
 
 ### Transfer fails with rent-related errors
 
-Destination or source account rent constraints are being hit.
+Solana accounts must meet rent-exemption requirements. The source or destination account may need additional SOL.
 
 Fixes:
 
