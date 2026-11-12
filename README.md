@@ -190,6 +190,8 @@ When `gasless=true`, transaction-engine now:
 
 ### Production hardening checklist for Kora
 
+Apply these controls before exposing Kora beyond a trusted local environment:
+
 - Set `price_source` to a real source (for example `Jupiter` where appropriate)
 - Use non-free pricing (`margin` or `fixed`) in `[validation.price]`
 - Enable authentication in `[kora.auth]` (`api_key` or `hmac_secret`)
