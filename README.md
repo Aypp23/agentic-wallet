@@ -252,7 +252,7 @@ npm run cli -- audit --help
 
 ### SKILLS contract
 
-`SKILLS.md` is the machine-readable integration contract for agents and orchestrators.
+`SKILLS.md` is the machine-readable integration contract for agents and orchestrators. Use it as the entry point for supported tools, inputs, and integration expectations.
 
 ### Intent compatibility runner
 
