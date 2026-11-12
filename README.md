@@ -310,12 +310,13 @@ Review this file after the run to inspect the captured demonstration results.
 
 ### `EADDRINUSE` on startup
 
+A service is already listening on one of the configured ports. Identify the process using the reported port, then stop that process if it belongs to an earlier local run. For example, inspect port `3000` with:
+
 ```bash
-PIDS=$(for p in 3000 3002 3003 3004 3005 3006 3007 3008 8080; do lsof -ti tcp:$p; done | sort -u)
-[ -n "$PIDS" ] && kill $PIDS
+lsof -i tcp:3000
 ```
 
-Then restart services.
+Then restart the affected service.
 
 ### Gasless submit fails with Kora-related errors
 
