@@ -185,7 +185,7 @@ When `gasless=true`, transaction-engine now:
 
 ### Current gasless support notes
 
-- Works well for locally-built intent tx (for example `transfer_sol`, `transfer_spl`, instruction-built paths).
+- Gasless submission supports locally-built intent transactions such as `transfer_sol`, `transfer_spl`, and other instruction-built paths.
 - For adapter-provided **prebuilt versioned transactions**, gasless is explicitly blocked with a clear error (use non-gasless for those paths until adapter-side gasless-aware build support is added).
 
 ### Production hardening checklist for Kora
