@@ -346,6 +346,8 @@ Fixes:
 
 ## Further Docs
 
+Use the docs index for detailed guides by topic; the repository README is the quickest path to start the local stack.
+
 - Docs index: [`docs/README.md`](./docs/README.md)
 - Architecture reference: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 - API reference: [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md)
