@@ -291,6 +291,8 @@ For a single command that runs this sequence, use `npm run ci:check`.
 
 ### Devnet scripts
 
+These scripts exercise live Solana devnet flows. Configure RPC access and funded test wallets before running them:
+
 ```bash
 npm run devnet:smoke
 npm run devnet:multi-agent
