@@ -208,9 +208,11 @@ npm run escrow:build
 npm run escrow:deploy:devnet
 ```
 
-After deploy, set/update:
+After deployment, configure the program ID used by the escrow adapter:
 
 - `ESCROW_PROGRAM_ID=<deployed_program_id>`
+
+Restart the local stack after changing this environment value.
 
 Escrow adapter health:
 
