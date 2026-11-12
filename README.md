@@ -104,6 +104,8 @@ These keys are only needed for flows that fund wallets from a payer; keep them o
 
 ### Start stack
 
+Load the environment and start all local services from the repository root:
+
 ```bash
 set -a; source .env; set +a
 npm run dev
