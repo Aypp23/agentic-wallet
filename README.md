@@ -214,7 +214,7 @@ After deployment, configure the program ID used by the escrow adapter:
 
 Restart the local stack after changing this environment value.
 
-Escrow adapter health:
+Check that the gateway can reach the configured escrow adapter:
 
 ```bash
 curl -s -H 'x-api-key: dev-api-key' http://localhost:3000/api/v1/protocols/escrow/health
