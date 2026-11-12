@@ -340,8 +340,8 @@ Fixes:
 
 ### Escrow health says not configured or deployed
 
-- set `ESCROW_PROGRAM_ID`
-- restart with env exported
+- confirm `ESCROW_PROGRAM_ID` matches the deployed devnet program
+- restart the stack so the updated environment is loaded
 - redeploy if needed: `npm run escrow:deploy:devnet`
 
 ## Further Docs
