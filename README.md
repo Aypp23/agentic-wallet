@@ -320,7 +320,7 @@ Then restart the affected service.
 
 ### Gasless submit fails with Kora-related errors
 
-Check in order:
+Confirm Kora is running and check the configuration in this order:
 
 1. `npm run kora:validate:rpc`
 2. `curl -s -X POST http://localhost:8080 -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getConfig"}'`
