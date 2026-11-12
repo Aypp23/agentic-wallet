@@ -166,6 +166,8 @@ npm run kora:start
 
 ### Gasless transaction command
 
+With Kora running and the environment configured, try a supported locally-built transfer intent:
+
 ```bash
 npm run cli -- tx create --wallet-id <walletId> --type transfer_sol --protocol system-program --intent '{"destination":"<toPubkey>","lamports":100000}' --gasless
 ```
