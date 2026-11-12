@@ -70,6 +70,8 @@ Solana RPC / Protocol Programs / Kora (optional gasless)
 | `services/audit-observability` | 3007 | audit + metrics |
 | `services/mcp-server` | 3008 | MCP tools + gateway proxy |
 
+The `.env.example` file lists the default local ports and service URLs used by the stack.
+
 ## Quick Start
 
 ### Prerequisites
