@@ -233,7 +233,7 @@ npm run cli -- tx list --wallet-id <walletId>
 npm run cli -- interactive
 ```
 
-Command groups:
+For the full set of options, request help from each command group:
 
 ```bash
 npm run cli -- wallet --help
