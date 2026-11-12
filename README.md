@@ -129,7 +129,7 @@ Kora is optional. If `gasless=true`, transaction-engine routes submission throug
 
 ### Why Kora warnings appear in dev
 
-You may see warnings like:
+The local Kora configuration is intentionally permissive to make development setup easier. You may see warnings like:
 
 - `price_source = Mock`
 - `price.type = free`
