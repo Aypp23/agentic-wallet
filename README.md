@@ -304,6 +304,8 @@ npm run demo:judge
 
 - `docs/DEMO_RESULTS.md`
 
+Review this file after the run to inspect the captured demonstration results.
+
 ## Troubleshooting
 
 ### `EADDRINUSE` on startup
