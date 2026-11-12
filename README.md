@@ -358,3 +358,5 @@ Use the docs index for detailed guides by topic; the repository README is the qu
 - Deep dive: [`docs/DEEP_DIVE.md`](./docs/DEEP_DIVE.md)
 - Security: [`docs/SECURITY.md`](./docs/SECURITY.md)
 - Agent integration contract: [`SKILLS.md`](./SKILLS.md)
+
+For deployment and operational procedures, start with the operations runbook and security guide before exposing services outside a trusted network.
