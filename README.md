@@ -82,7 +82,7 @@ Solana RPC / Protocol Programs / Kora (optional gasless)
 ### Install
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
 ```
 
