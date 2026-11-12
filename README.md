@@ -156,6 +156,8 @@ This setup is intended for localhost testing. Do not expose it to the public int
 
 ### Kora commands
 
+Validate the local configuration, optionally validate it against the RPC, then start Kora in its own terminal when testing gasless submission:
+
 ```bash
 npm run kora:validate
 npm run kora:validate:rpc
