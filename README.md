@@ -201,7 +201,7 @@ Apply these controls before exposing Kora beyond a trusted local environment:
 
 ## Escrow Program (Anchor)
 
-Escrow is backed by a real on-chain Anchor program in [`programs/escrow`](./programs/escrow/README.md).
+Escrow is backed by an Anchor program in [`programs/escrow`](./programs/escrow/README.md). Build and deploy it to Solana devnet with:
 
 ```bash
 npm run escrow:build
