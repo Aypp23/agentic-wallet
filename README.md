@@ -91,7 +91,9 @@ cp .env.example .env
 Minimum env for local stack:
 
 - `WALLET_KEY_ENCRYPTION_SECRET`
-- `API_GATEWAY_API_KEYS` (default dev key is already set in `.env.example`)
+- `API_GATEWAY_API_KEYS` (the example file includes a development key)
+
+Replace placeholder secrets before using the stack outside a local development environment.
 
 Optional devnet funding variables:
 
