@@ -277,6 +277,8 @@ npm run wallets -- create --label bot-1 --auto-fund --fund-lamports 2000000
 
 ### Core checks
 
+Run the same checks locally that are used for the repository's core validation:
+
 ```bash
 npm run secret:scan
 npm run lint
@@ -284,6 +286,8 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+For a single command that runs this sequence, use `npm run ci:check`.
 
 ### Devnet scripts
 
