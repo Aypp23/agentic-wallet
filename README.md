@@ -141,7 +141,7 @@ This is intentional for local/dev convenience:
 - `free` means relays are sponsored with no token fee collection.
 - no auth means any caller with network access can hit Kora.
 
-This is fine for localhost testing, not fine for internet-exposed production.
+This setup is intended for localhost testing. Do not expose it to the public internet without applying the production hardening steps below.
 
 ### Config files used here
 
