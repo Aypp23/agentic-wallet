@@ -100,6 +100,8 @@ Optional devnet funding variables:
 - `PRIVATE_KEY`
 - `WALLET_AUTOFUND_PAYER_PRIVATE_KEY`
 
+These keys are only needed for flows that fund wallets from a payer; keep them out of source control.
+
 ### Start stack
 
 ```bash
