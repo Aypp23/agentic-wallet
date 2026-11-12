@@ -256,6 +256,8 @@ npm run cli -- audit --help
 
 ### Intent compatibility runner
 
+Use the runner to submit one intent from a JSON file or inline JSON while checking intent compatibility:
+
 ```bash
 npm run intent-runner -- --file <intent.json>
 npm run intent-runner -- --intent '<json-string>'
