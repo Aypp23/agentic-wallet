@@ -222,6 +222,8 @@ curl -s -H 'x-api-key: dev-api-key' http://localhost:3000/api/v1/protocols/escro
 
 ## CLI Quick Use
 
+Run CLI commands from the repository root. Replace placeholders such as `<walletId>` with IDs returned by the wallet commands.
+
 ```bash
 npm run cli -- doctor
 npm run cli -- wallet create demo --auto-fund --fund-lamports 2000000
