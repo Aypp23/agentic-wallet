@@ -265,6 +265,8 @@ npm run intent-runner -- --intent '<json-string>'
 
 ### Wallet helper
 
+The wallet helper provides a shorter route for listing and creating wallets from the terminal:
+
 ```bash
 npm run wallets -- list
 npm run wallets -- create --label bot-1
