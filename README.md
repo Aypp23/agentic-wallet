@@ -113,6 +113,8 @@ npm run dev
 
 ### Health checks
 
+After startup, check the gateway, transaction engine, and protocol adapter health endpoints:
+
 ```bash
 curl -s http://localhost:3000/health
 curl -s http://localhost:3006/health
