@@ -76,8 +76,10 @@ Solana RPC / Protocol Programs / Kora (optional gasless)
 
 - Node.js `>= 20`
 - npm `>= 10`
-- Solana CLI `>= 1.18` (devnet funding/deploy tasks)
-- Anchor CLI `>= 0.31` (escrow program)
+- Solana CLI `>= 1.18` for devnet funding and deployment tasks
+- Anchor CLI `>= 0.31` for escrow program build and deployment
+
+The local service stack can be explored without deploying the escrow program.
 
 ### Install
 
